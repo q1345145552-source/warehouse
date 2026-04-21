@@ -1,0 +1,16 @@
+{
+  "name": "warehouse-management-monorepo",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev:frontend": "npm --workspace frontend run dev",
+    "dev:backend": "npm --workspace backend run start:dev",
+    "build": "npm --workspace frontend run build && npm --workspace backend run build",
+    "test:backend": "npm --prefix backend run test",
+    "test:e2e": "npm --prefix backend run test:e2e",
+    "deploy:local": "bash ./scripts/deploy-local.sh"
+  }
+}

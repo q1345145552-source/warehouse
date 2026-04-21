@@ -1,0 +1,486 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Warehouse {
+  id        String             @id @default(cuid())
+  code      String             @unique
+  name      String
+  countryCode String?
+  cityName  String?
+  areaSize  Decimal?           @db.Decimal(12, 2)
+  status    String             @default("enabled")
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  features  WarehouseFeature[]
+  projects  FinanceProject[]
+  records   FinanceRecord[]
+  demands   Demand[]
+  kpiRules  KpiRule[]
+  kpiEntries KpiEntry[]
+  kpiResults KpiResult[]
+  snapshots ProfitSnapshot[]
+  partners Partner[]
+  users     UserAccount[]
+  financeRules FinanceAllocationRule[]
+  adjustments FinanceAdjustment[]
+  inventoryItems InventoryItem[]
+}
+
+model UserAccount {
+  id          String         @id @default(cuid())
+  account     String         @unique
+  password    String
+  role        String
+  warehouseId String?
+  status      String         @default("active")
+  failedLoginCount Int       @default(0)
+  lockedUntil DateTime?
+  lastLoginAt DateTime?
+  passwordUpdatedAt DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  warehouse    Warehouse?      @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  refreshToken RefreshToken?
+  requestedAdjustments FinanceAdjustment[] @relation("AdjustmentRequester")
+  reviewedAdjustments  FinanceAdjustment[] @relation("AdjustmentReviewer")
+  reviewedInventoryItems InventoryItem[]   @relation("InventoryReviewer")
+}
+
+model RefreshToken {
+  id         String      @id @default(cuid())
+  userId     String      @unique
+  tokenHash  String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  user       UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model WarehouseFeature {
+  id         String   @id @default(cuid())
+  warehouseId String
+  featureKey String
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  warehouse  Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([warehouseId, featureKey])
+}
+
+model FinanceProject {
+  id          String   @id @default(cuid())
+  warehouseId String
+  projectCode String?  @unique
+  projectName String
+  customerName String?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  records     FinanceRecord[]
+  snapshots   ProfitSnapshot[]
+  adjustments FinanceAdjustment[]
+  allocationLines FinanceSnapshotAllocationLine[]
+  allocationRuleDetails FinanceAllocationRuleDetail[]
+}
+
+model FinanceAdjustment {
+  id                String   @id @default(cuid())
+  warehouseId        String
+  projectId          String?
+  adjustmentType     String
+  amount             Decimal  @db.Decimal(14, 2)
+  currencyCode       String   @default("CNY")
+  fxRateToCny        Decimal? @db.Decimal(12, 6)
+  amountCny          Decimal? @db.Decimal(14, 2)
+  reason             String
+  status             String   @default("draft")
+  requestedByUserId  String
+  reviewedByUserId   String?
+  reviewNote         String?
+  submittedAt        DateTime?
+  reviewedAt         DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  warehouse          Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  project            FinanceProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  requestedBy        UserAccount  @relation("AdjustmentRequester", fields: [requestedByUserId], references: [id], onDelete: Cascade)
+  reviewedBy         UserAccount? @relation("AdjustmentReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([warehouseId, status, createdAt])
+  @@index([projectId, status])
+}
+
+model FinanceRecord {
+  id          String   @id @default(cuid())
+  warehouseId String
+  projectId   String?
+  recordType  String
+  targetModule String?
+  moduleData  Json?
+  category    String
+  amount      Decimal  @db.Decimal(14, 2)
+  currencyCode String  @default("CNY")
+  fxRateToCny Decimal? @db.Decimal(12, 6)
+  amountCny   Decimal? @db.Decimal(14, 2)
+  recordDate  DateTime
+  counterparty String?
+  costNature  String?
+  note        String?
+  status      String   @default("draft")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse   Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  project     FinanceProject? @relation(fields: [projectId], references: [id])
+
+  @@index([warehouseId, targetModule, createdAt])
+}
+
+model ProfitSnapshot {
+  id             String   @id @default(cuid())
+  snapshotKey    String   @unique
+  warehouseId    String
+  projectId      String?
+  snapshotType   String
+  periodStartDate DateTime
+  periodEndDate  DateTime
+  totalIncome    Decimal  @db.Decimal(14, 2)
+  totalExpense   Decimal  @db.Decimal(14, 2)
+  totalPurchaseCost Decimal @db.Decimal(14, 2)
+  netProfit      Decimal  @db.Decimal(14, 2)
+  status         String   @default("calculated")
+  appliedRuleVersionId String?
+  appliedSharedExpenseRate Decimal @db.Decimal(8, 4) @default(1)
+  appliedPurchaseCostRate Decimal @db.Decimal(8, 4) @default(1)
+  appliedAdjustmentAmount Decimal @db.Decimal(14, 2) @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  warehouse      Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  project        FinanceProject? @relation(fields: [projectId], references: [id])
+  partnerResults PartnerProfitResult[]
+  appliedRuleVersion FinanceAllocationRuleVersion? @relation(fields: [appliedRuleVersionId], references: [id], onDelete: SetNull)
+  allocationLines FinanceSnapshotAllocationLine[]
+}
+
+model Partner {
+  id          String   @id @default(cuid())
+  warehouseId String
+  name        String
+  ratio       Decimal  @db.Decimal(6, 4)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  results     PartnerProfitResult[]
+}
+
+model PartnerProfitResult {
+  id           String   @id @default(cuid())
+  snapshotId   String
+  partnerId    String
+  baseProfitAmount Decimal @db.Decimal(14, 2)
+  ratioValue   Decimal  @db.Decimal(6, 4)
+  adjustmentAmount Decimal @db.Decimal(14, 2) @default(0)
+  finalProfitAmount Decimal @db.Decimal(14, 2)
+  createdAt    DateTime @default(now())
+
+  snapshot     ProfitSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  partner      Partner        @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+}
+
+model FinanceAnalysis {
+  id          String   @id @default(cuid())
+  warehouseId String?
+  analysisType String
+  content     String
+  riskLevel   String
+  createdAt   DateTime @default(now())
+}
+
+model ExchangeRate {
+  id            String   @id @default(cuid())
+  baseCurrency  String
+  quoteCurrency String
+  rateValue     Decimal  @db.Decimal(12, 6)
+  effectiveDate DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([baseCurrency, quoteCurrency, effectiveDate])
+  @@unique([baseCurrency, quoteCurrency, effectiveDate])
+}
+
+model FinanceAllocationRule {
+  id               String   @id @default(cuid())
+  warehouseId       String
+  ruleName          String
+  scopeType         String
+  currentVersionId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  versions          FinanceAllocationRuleVersion[]
+}
+
+model FinanceAllocationRuleVersion {
+  id                 String   @id @default(cuid())
+  ruleId             String
+  versionName        String
+  effectiveStartAt   DateTime
+  isActive           Boolean  @default(false)
+  sharedExpenseRate  Decimal  @db.Decimal(8, 4) @default(1)
+  purchaseCostRate   Decimal  @db.Decimal(8, 4) @default(1)
+  includeAdjustmentsInSnapshot Boolean @default(false)
+  createdAt          DateTime @default(now())
+
+  rule               FinanceAllocationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  snapshots          ProfitSnapshot[]
+  details            FinanceAllocationRuleDetail[]
+}
+
+model FinanceAllocationRuleDetail {
+  id             String   @id @default(cuid())
+  ruleVersionId  String
+  targetType     String
+  method         String
+  projectId      String?
+  ratioValue     Decimal? @db.Decimal(8, 4)
+  priority       Int      @default(100)
+  isEnabled      Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  ruleVersion    FinanceAllocationRuleVersion @relation(fields: [ruleVersionId], references: [id], onDelete: Cascade)
+  project        FinanceProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  allocationLines FinanceSnapshotAllocationLine[]
+
+  @@index([ruleVersionId, targetType, priority, isEnabled])
+}
+
+model FinanceSnapshotAllocationLine {
+  id                String   @id @default(cuid())
+  snapshotId        String
+  projectId         String?
+  sourceType        String
+  method            String
+  sourceAmountCny   Decimal  @db.Decimal(14, 2)
+  allocatedAmountCny Decimal @db.Decimal(14, 2)
+  ratioApplied      Decimal? @db.Decimal(8, 4)
+  ruleDetailId      String?
+  createdAt         DateTime @default(now())
+
+  snapshot          ProfitSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  project           FinanceProject? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ruleDetail        FinanceAllocationRuleDetail? @relation(fields: [ruleDetailId], references: [id], onDelete: SetNull)
+
+  @@index([snapshotId, sourceType, createdAt])
+}
+
+model KpiRule {
+  id              String   @id @default(cuid())
+  warehouseId      String
+  ruleName         String
+  scopeType        String
+  currentVersionId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  warehouse        Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  versions         KpiRuleVersion[]
+}
+
+model KpiRuleVersion {
+  id               String   @id @default(cuid())
+  ruleId           String
+  versionName      String
+  effectiveStartAt DateTime
+  isActive         Boolean  @default(false)
+
+  businessCeiling  Decimal  @db.Decimal(8, 2) @default(35)
+  businessDivisor  Decimal  @db.Decimal(8, 2) @default(10)
+  errorCeiling     Decimal  @db.Decimal(8, 2) @default(30)
+  errorPenalty     Decimal  @db.Decimal(8, 2) @default(1)
+  efficiencyCeiling Decimal @db.Decimal(8, 2) @default(20)
+  efficiencyDivisor Decimal @db.Decimal(8, 2) @default(1)
+  loadCeiling      Decimal  @db.Decimal(8, 2) @default(15)
+  loadMultiplier   Decimal  @db.Decimal(8, 2) @default(10)
+
+  excellentMin     Decimal  @db.Decimal(8, 2) @default(90)
+  goodMin          Decimal  @db.Decimal(8, 2) @default(80)
+  passMin          Decimal  @db.Decimal(8, 2) @default(70)
+  improveMin       Decimal  @db.Decimal(8, 2) @default(60)
+
+  createdAt        DateTime @default(now())
+
+  rule             KpiRule  @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+}
+
+model KpiEntry {
+  id           String   @id @default(cuid())
+  warehouseId  String
+  staffCode    String?
+  targetType   String
+  cycleType    String
+  startDate    DateTime
+  endDate      DateTime
+  orderCount   Int
+  warehouseArea Decimal @db.Decimal(12, 2)
+  staffCount   Int
+  errorCount   Int
+  inboundCount Int
+  note         String?
+  status       String   @default("submitted")
+  createdAt    DateTime @default(now())
+
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+}
+
+model KpiResult {
+  id           String   @id @default(cuid())
+  warehouseId  String
+  staffCode    String?
+  cycleType    String
+  startDate    DateTime
+  endDate      DateTime
+  totalScore   Decimal  @db.Decimal(8, 2)
+  grade        String
+  createdAt    DateTime @default(now())
+
+  warehouse    Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  metricScores KpiMetricScore[]
+  analysis     KpiAnalysis[]
+}
+
+model KpiMetricScore {
+  id          String   @id @default(cuid())
+  resultId    String
+  metricCode  String
+  scoreCeiling Decimal @db.Decimal(8, 2)
+  actualScore Decimal  @db.Decimal(8, 2)
+  createdAt   DateTime @default(now())
+
+  result      KpiResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+}
+
+model KpiAnalysis {
+  id         String   @id @default(cuid())
+  resultId   String
+  analysisType String
+  content    String
+  riskLevel  String?
+  createdAt  DateTime @default(now())
+
+  result     KpiResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+}
+
+model Demand {
+  id          String   @id @default(cuid())
+  warehouseId String
+  demandType  String
+  title       String
+  description String
+  urgency     String
+  contactName String?
+  status      String   @default("submitted")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  progressLogs DemandProgressLog[]
+}
+
+model Product {
+  id           String   @id @default(cuid())
+  productName  String
+  category     String
+  coverImageUrl String?
+  description  String
+  price        Decimal? @db.Decimal(14, 2)
+  unit         String?
+  stockQuantity Int     @default(0)
+  isSellable   Boolean  @default(true)
+  status       String   @default("active")
+  listedAt     DateTime?
+  unlistedAt   DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([status, category, createdAt])
+  @@index([status, isSellable, listedAt, unlistedAt])
+}
+
+model DemandTypeConfig {
+  id          String   @id @default(cuid())
+  typeKey     String   @unique
+  typeName    String
+  description String?
+  sortOrder   Int      @default(100)
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isEnabled, sortOrder, typeName])
+}
+
+model InventoryItem {
+  id             String   @id @default(cuid())
+  warehouseId    String
+  inventoryType  String
+  title          String
+  description    String
+  quantity       Int
+  unit           String?
+  status         String   @default("draft")
+  rejectionReason String?
+  reviewedByUserId String?
+  reviewedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  warehouse      Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  reviewedBy     UserAccount? @relation("InventoryReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([inventoryType, status, createdAt])
+  @@index([warehouseId, status, createdAt])
+  @@index([reviewedByUserId, reviewedAt])
+}
+
+model DemandProgressLog {
+  id         String   @id @default(cuid())
+  demandId   String
+  status     String
+  note       String
+  createdAt  DateTime @default(now())
+
+  demand     Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+}
+
+model OperationLog {
+  id         String   @id @default(cuid())
+  module     String
+  action     String
+  operator   String
+  payload    String?
+  createdAt  DateTime @default(now())
+
+  @@index([module, action, createdAt])
+  @@index([operator, createdAt])
+  @@index([createdAt])
+}

@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: warehouse_mgmt_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d warehouse_mgmt_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/warehouse_mgmt_ci?schema=public
+      JWT_ACCESS_SECRET: dev_access_secret
+      JWT_REFRESH_SECRET: dev_refresh_secret
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma Client
+        run: npm --prefix backend run prisma:generate
+
+      - name: Push Prisma schema to database
+        run: npm --prefix backend run prisma:dbpush
+
+      - name: Build backend
+        run: npm --prefix backend run build
+
+      - name: Test backend
+        run: npm --prefix backend run test
+
+      - name: Test backend e2e
+        run: npm --prefix backend run test:e2e
+
+      - name: Test backend real smoke e2e
+        run: npm --prefix backend run test:e2e:real
+
+      - name: Build frontend
+        run: npm --prefix frontend run build
