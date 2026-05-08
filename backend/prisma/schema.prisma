@@ -398,6 +398,8 @@ model Demand {
   description String
   urgency     String
   contactName String?
+  wechatId    String?
+  intendedQuantity Int?
   status      String   @default("submitted")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

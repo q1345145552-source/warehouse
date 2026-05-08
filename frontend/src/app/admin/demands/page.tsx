@@ -12,6 +12,9 @@ type AdminDemand = {
   title: string;
   description: string;
   urgency: string;
+  contactName?: string | null;
+  wechatId?: string | null;
+  intendedQuantity?: number | null;
   status: string;
   createdAt: string;
 };
@@ -32,6 +35,30 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function isProductIntent(demand: AdminDemand) {
   return demand.title.startsWith('商品采购意向-');
+}
+
+function extractDetailValue(description: string, label: string) {
+  const line = description
+    .split('\n')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${label}:`));
+  if (!line) return '';
+  return line.slice(label.length + 1).trim();
+}
+
+function getWechatFromDescription(description: string) {
+  return extractDetailValue(description, '微信号');
+}
+
+function getQuantityFromDescription(description: string) {
+  return extractDetailValue(description, '意向数量');
+}
+
+function getIntendedQuantityText(demand: AdminDemand) {
+  if (demand.intendedQuantity !== null && demand.intendedQuantity !== undefined) {
+    return String(demand.intendedQuantity);
+  }
+  return getQuantityFromDescription(demand.description) || '-';
 }
 
 export default function AdminDemandsPage() {
@@ -136,6 +163,9 @@ export default function AdminDemandsPage() {
               <th>类型</th>
               <th>标题</th>
               <th>仓库ID</th>
+              <th>联系人</th>
+              <th>微信号</th>
+              <th>意向数量</th>
               <th>状态</th>
               <th>紧急程度</th>
               <th>提交时间</th>
@@ -148,6 +178,11 @@ export default function AdminDemandsPage() {
                 <td>{isProductIntent(demand) ? '商品采购意向' : demand.demandType}</td>
                 <td>{demand.title}</td>
                 <td>{demand.warehouseId}</td>
+                <td>{demand.contactName || '-'}</td>
+                <td>{isProductIntent(demand) ? demand.wechatId || getWechatFromDescription(demand.description) || '-' : '-'}</td>
+                <td>
+                  {isProductIntent(demand) ? getIntendedQuantityText(demand) : '-'}
+                </td>
                 <td>{demand.status}</td>
                 <td>{demand.urgency}</td>
                 <td>{demand.createdAt.slice(0, 16).replace('T', ' ')}</td>

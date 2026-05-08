@@ -191,6 +191,8 @@ export class ProductsService {
         description: descriptionLines.join('\n'),
         urgency: dto.urgency ?? 'medium',
         contactName: dto.contactName.trim(),
+        wechatId: dto.note.trim(),
+        intendedQuantity: quantity,
         status: 'submitted',
       },
     });

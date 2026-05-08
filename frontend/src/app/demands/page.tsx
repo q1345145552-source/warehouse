@@ -8,7 +8,11 @@ type Demand = {
   id: string;
   demandType: string;
   title: string;
+  description: string;
   urgency: string;
+  contactName?: string | null;
+  wechatId?: string | null;
+  intendedQuantity?: number | null;
   status: string;
   createdAt: string;
 };
@@ -37,6 +41,31 @@ const legacyDemandTypeMap: Record<string, string> = {
   second_hand: 'warehouse_request',
   other: 'warehouse_request',
 };
+
+function isProductIntent(demand: Demand) {
+  return demand.title.startsWith('商品采购意向-');
+}
+
+function extractDetailValue(description: string, label: string) {
+  const line = description
+    .split('\n')
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${label}:`));
+  if (!line) return '';
+  return line.slice(label.length + 1).trim();
+}
+
+function getWechatText(demand: Demand) {
+  if (demand.wechatId && demand.wechatId.trim()) return demand.wechatId;
+  return extractDetailValue(demand.description, '微信号') || '-';
+}
+
+function getIntendedQuantityText(demand: Demand) {
+  if (demand.intendedQuantity !== null && demand.intendedQuantity !== undefined) {
+    return String(demand.intendedQuantity);
+  }
+  return extractDetailValue(demand.description, '意向数量') || '-';
+}
 
 export default function DemandsPage() {
   const [demands, setDemands] = useState<Demand[]>([]);
@@ -194,13 +223,26 @@ export default function DemandsPage() {
         <h3>需求列表</h3>
         <table className="table">
           <thead>
-            <tr><th>类型</th><th>标题</th><th>状态</th><th>紧急程度</th><th>提交时间</th><th>操作</th></tr>
+            <tr>
+              <th>类型</th>
+              <th>标题</th>
+              <th>联系人</th>
+              <th>微信号</th>
+              <th>意向数量</th>
+              <th>状态</th>
+              <th>紧急程度</th>
+              <th>提交时间</th>
+              <th>操作</th>
+            </tr>
           </thead>
           <tbody>
             {demands.map((row) => (
               <tr key={row.id}>
                 <td>{getDemandTypeLabel(row.demandType)}</td>
                 <td>{row.title}</td>
+                <td>{row.contactName || '-'}</td>
+                <td>{isProductIntent(row) ? getWechatText(row) : '-'}</td>
+                <td>{isProductIntent(row) ? getIntendedQuantityText(row) : '-'}</td>
                 <td>{row.status}</td>
                 <td>{row.urgency}</td>
                 <td>{row.createdAt?.slice(0, 10) ?? '-'}</td>
