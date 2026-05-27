@@ -62,6 +62,9 @@ export default function LoginPage() {
           <button type="submit" disabled={loading}>{loading ? '登录中...' : '登录'}</button>
         </form>
         {message ? <p>{message}</p> : null}
+        <p style={{ marginTop: 16, textAlign: 'center' }}>
+          还没有账号？<a href="/register" style={{ color: '#1890ff' }}>去注册</a>
+        </p>
       </section>
     </main>
   );

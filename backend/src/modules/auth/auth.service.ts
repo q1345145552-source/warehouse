@@ -1,8 +1,9 @@
-import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { compare, hash } from 'bcryptjs';
 import { createHash } from 'crypto';
 import { LoginDto } from './dto/login.dto';
+import { RegisterDto } from './dto/register.dto';
 import { AuthUser } from '../../common/auth/current-user.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UserRole } from '../../common/auth/roles.decorator';
@@ -90,6 +91,84 @@ export class AuthService {
     return {
       success: true,
       message: '登录成功',
+      data: {
+        accessToken,
+        refreshToken,
+        role: user.role,
+        warehouseId: user.warehouseId,
+        account: user.account,
+      },
+    };
+  }
+
+  async register(dto: RegisterDto) {
+    // 校验确认密码
+    if (dto.password !== dto.confirmPassword) {
+      throw new HttpException('两次输入的密码不一致', HttpStatus.BAD_REQUEST);
+    }
+
+    // 检查账号是否已存在
+    const existingAccount = await this.prisma.userAccount.findFirst({
+      where: { account: dto.account },
+    });
+    if (existingAccount) {
+      throw new ConflictException('账号已存在');
+    }
+
+    // 检查手机号是否已存在
+    const existingPhone = await this.prisma.userAccount.findFirst({
+      where: { phone: dto.phone },
+    });
+    if (existingPhone) {
+      throw new ConflictException('手机号已注册');
+    }
+
+    // 检查邮箱是否已存在（如果提供了邮箱）
+    if (dto.email) {
+      const existingEmail = await this.prisma.userAccount.findFirst({
+        where: { email: dto.email },
+      });
+      if (existingEmail) {
+        throw new ConflictException('邮箱已注册');
+      }
+    }
+
+    // 创建用户
+    const hashedPassword = await this.hashPassword(dto.password);
+    const user = await this.prisma.userAccount.create({
+      data: {
+        account: dto.account,
+        password: hashedPassword,
+        role: dto.role,
+        phone: dto.phone,
+        email: dto.email || null,
+        companyName: dto.companyName || null,
+        status: 'active',
+      },
+    });
+
+    // 生成 token
+    const payload: AuthUser = {
+      sub: user.id,
+      account: user.account,
+      role: this.toUserRole(user.role),
+      warehouseId: user.warehouseId,
+    };
+
+    const accessToken = await this.signAccessToken(payload);
+    const refreshToken = await this.signRefreshToken(payload);
+
+    await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: this.hashToken(refreshToken),
+        expiresAt: this.getRefreshExpiresAt(),
+      },
+    });
+
+    return {
+      success: true,
+      message: '注册成功',
       data: {
         accessToken,
         refreshToken,

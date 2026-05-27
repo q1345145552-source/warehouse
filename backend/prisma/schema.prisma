@@ -38,6 +38,9 @@ model UserAccount {
   account     String         @unique
   password    String
   role        String
+  phone       String?        @unique
+  email       String?
+  companyName String?
   warehouseId String?
   status      String         @default("active")
   failedLoginCount Int       @default(0)
@@ -52,6 +55,7 @@ model UserAccount {
   requestedAdjustments FinanceAdjustment[] @relation("AdjustmentRequester")
   reviewedAdjustments  FinanceAdjustment[] @relation("AdjustmentReviewer")
   reviewedInventoryItems InventoryItem[]   @relation("InventoryReviewer")
+  notifications Notification[]
 }
 
 model RefreshToken {
@@ -472,6 +476,23 @@ model DemandProgressLog {
   createdAt  DateTime @default(now())
 
   demand     Demand @relation(fields: [demandId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  content   String?
+  module    String
+  moduleId  String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user UserAccount @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@index([userId, createdAt])
 }
 
 model OperationLog {
