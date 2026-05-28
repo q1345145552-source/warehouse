@@ -17,13 +17,26 @@ export class FinanceService {
 
   async getDashboard(user: AuthUser) {
     const whereWarehouse = this.whereWarehouse(user);
-    const records = await this.prisma.financeRecord.findMany({
-      where: { ...whereWarehouse, status: 'approved' },
-      select: { recordType: true, amount: true, amountCny: true },
-    });
-    const income = records.filter((r) => r.recordType === 'income').reduce((sum, r) => sum + this.getAmountInCny(r.amount, r.amountCny), 0);
-    const expense = records.filter((r) => r.recordType === 'expense').reduce((sum, r) => sum + this.getAmountInCny(r.amount, r.amountCny), 0);
-    const purchase = records.filter((r) => r.recordType === 'purchase').reduce((sum, r) => sum + this.getAmountInCny(r.amount, r.amountCny), 0);
+    
+    // 使用数据库聚合查询，避免加载所有记录到内存
+    const [incomeResult, expenseResult, purchaseResult] = await Promise.all([
+      this.prisma.financeRecord.aggregate({
+        where: { ...whereWarehouse, status: 'approved', recordType: 'income' },
+        _sum: { amountCny: true },
+      }),
+      this.prisma.financeRecord.aggregate({
+        where: { ...whereWarehouse, status: 'approved', recordType: 'expense' },
+        _sum: { amountCny: true },
+      }),
+      this.prisma.financeRecord.aggregate({
+        where: { ...whereWarehouse, status: 'approved', recordType: 'purchase' },
+        _sum: { amountCny: true },
+      }),
+    ]);
+
+    const income = Number(incomeResult._sum.amountCny ?? 0);
+    const expense = Number(expenseResult._sum.amountCny ?? 0);
+    const purchase = Number(purchaseResult._sum.amountCny ?? 0);
 
     return {
       success: true,
