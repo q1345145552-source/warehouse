@@ -29,7 +29,7 @@
     "@nestjs/config": "^4.0.2",
     "@nestjs/core": "^11.0.1",
     "@nestjs/jwt": "^11.0.1",
-    "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/platform-express": "^11.1.24",
     "@nestjs/schedule": "^5.0.1",
     "@prisma/client": "^6.6.0",
     "bcryptjs": "^3.0.3",

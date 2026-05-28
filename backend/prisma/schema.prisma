@@ -31,6 +31,8 @@ model Warehouse {
   financeRules FinanceAllocationRule[]
   adjustments FinanceAdjustment[]
   inventoryItems InventoryItem[]
+  customers          Customer[]
+  bankAccounts       BankAccount[]
 }
 
 model UserAccount {
@@ -506,4 +508,319 @@ model OperationLog {
   @@index([module, action, createdAt])
   @@index([operator, createdAt])
   @@index([createdAt])
+}
+
+// ============================================================
+// 新财务系统模型（暹联海外仓财务逻辑）
+// ============================================================
+
+model Customer {
+  id                String   @id @default(cuid())
+  warehouseId       String
+  customerId        String   @unique
+  customerName      String
+  customerType      String   @default("prepaid")
+  currencyPreference String @default("THB")
+  exchangeRate      Decimal? @db.Decimal(10, 4)
+  contactName       String?
+  contactPhone      String?
+  wechatId          String?
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  warehouse         Warehouse @relation(fields: [warehouseId], references: [id])
+  rechargeTransactions RechargeTransaction[]
+  serviceRevenues      ServiceRevenue[]
+  servicePricings      ServicePricing[]
+
+  @@unique([warehouseId, customerId])
+  @@index([warehouseId, status])
+}
+
+model ChartOfAccounts {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  parentId    String?
+  category    String
+  level       Int      @default(1)
+  isLeaf      Boolean  @default(true)
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent      ChartOfAccounts?  @relation("AccountTree", fields: [parentId], references: [id])
+  children    ChartOfAccounts[] @relation("AccountTree")
+  journalEntries JournalEntryLine[]
+  bankTransactions BankAccountTransaction[]
+
+  @@index([category, level])
+}
+
+model RechargeTransaction {
+  id              String   @id @default(cuid())
+  customerId      String
+  transactionDate DateTime
+  type            String
+  currency        String
+  amountThb       Decimal  @db.Decimal(14, 2)
+  amountCny       Decimal  @db.Decimal(14, 2)
+  exchangeRate    Decimal? @db.Decimal(10, 4)
+  balanceAfterThb Decimal  @db.Decimal(14, 2)
+  balanceAfterCny Decimal  @db.Decimal(14, 2)
+  remark          String?
+  refInvoiceId    String?
+  status          String   @default("confirmed")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer @relation(fields: [customerId], references: [id])
+
+  @@index([customerId, transactionDate])
+  @@index([type, transactionDate])
+}
+
+model BankAccount {
+  id          String   @id @default(cuid())
+  warehouseId String
+  accountName String
+  accountType String
+  description String?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  transactions BankAccountTransaction[]
+
+  @@index([warehouseId, status])
+}
+
+model BankAccountTransaction {
+  id              String   @id @default(cuid())
+  bankAccountId   String
+  subAccount      String?
+  transactionDate DateTime
+  month           String
+  categoryId      String?
+  category        ChartOfAccounts? @relation(fields: [categoryId], references: [id])
+  description     String
+  incomeThb       Decimal  @db.Decimal(14, 2) @default(0)
+  incomeCny       Decimal  @db.Decimal(14, 2) @default(0)
+  expenseThb      Decimal  @db.Decimal(14, 2) @default(0)
+  expenseCny      Decimal  @db.Decimal(14, 2) @default(0)
+  balanceAfterThb Decimal? @db.Decimal(14, 2)
+  balanceAfterCny Decimal? @db.Decimal(14, 2)
+  remark          String?
+  attachments     Json?
+  status          String   @default("confirmed")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@index([bankAccountId, transactionDate])
+  @@index([month])
+}
+
+model ServicePricing {
+  id          String   @id @default(cuid())
+  customerId  String
+  serviceType String
+  unitPrice   Decimal  @db.Decimal(14, 4)
+  unit        String   @default("THB")
+  effectiveFrom DateTime @default(now())
+  effectiveTo   DateTime?
+  isActive    Boolean  @default(true)
+  remark      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  customer    Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, serviceType, effectiveFrom])
+}
+
+model ServiceRevenue {
+  id              String   @id @default(cuid())
+  customerId      String
+  serviceMonth    String
+  serviceDate     DateTime?
+  serviceType     String
+  quantity        Decimal  @db.Decimal(14, 2) @default(0)
+  unitPrice       Decimal  @db.Decimal(14, 4) @default(0)
+  amountThb       Decimal  @db.Decimal(14, 2) @default(0)
+  remark          String?
+  refOrderId      String?
+  status          String   @default("confirmed")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer        Customer @relation(fields: [customerId], references: [id])
+
+  @@unique([customerId, serviceMonth, serviceType, refOrderId])
+  @@index([customerId, serviceMonth])
+  @@index([serviceMonth])
+}
+
+model ConsumableItem {
+  id          String   @id @default(cuid())
+  warehouseId String
+  itemCode    String?
+  itemName    String
+  category    String   @default("consumable")
+  unit        String
+  defaultPrice Decimal? @db.Decimal(14, 4)
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  transactions ConsumableTransaction[]
+
+  @@index([warehouseId, status])
+}
+
+model ConsumableTransaction {
+  id              String   @id @default(cuid())
+  itemId          String
+  transactionDate DateTime
+  month           String
+  type            String
+  quantity        Decimal  @db.Decimal(14, 2)
+  unitPrice       Decimal? @db.Decimal(14, 4)
+  totalAmount     Decimal? @db.Decimal(14, 2)
+  balanceAfter    Decimal  @db.Decimal(14, 2)
+  balanceValue    Decimal? @db.Decimal(14, 2)
+  remark          String?
+  createdAt       DateTime @default(now())
+
+  item            ConsumableItem @relation(fields: [itemId], references: [id])
+
+  @@index([itemId, transactionDate])
+  @@index([month])
+}
+
+model FixedAsset {
+  id              String   @id @default(cuid())
+  warehouseId     String
+  assetName       String
+  assetCode       String?
+  nature          String
+  purchaseDate    DateTime?
+  purchaseQty     Decimal  @db.Decimal(12, 2) @default(0)
+  unitPrice       Decimal  @db.Decimal(14, 2) @default(0)
+  purchaseAmount  Decimal  @db.Decimal(14, 2) @default(0)
+  disposedQty     Decimal  @db.Decimal(12, 2) @default(0)
+  balanceQty      Decimal  @db.Decimal(12, 2) @default(0)
+  balanceAmount   Decimal  @db.Decimal(14, 2) @default(0)
+  depreciationMethod String @default("immediate")
+  usefulLife      Int?
+  monthlyDepreciation Decimal? @db.Decimal(14, 2)
+  accumulatedDepreciation Decimal @db.Decimal(14, 2) @default(0)
+  status          String   @default("active")
+  remark          String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([warehouseId, status])
+}
+
+model JournalEntry {
+  id              String   @id @default(cuid())
+  entryNo         String   @unique
+  entryDate       DateTime
+  month           String
+  description     String
+  debitTotal      Decimal  @db.Decimal(14, 2)
+  creditTotal     Decimal  @db.Decimal(14, 2)
+  sourceType      String?
+  sourceId        String?
+  status          String   @default("posted")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines           JournalEntryLine[]
+
+  @@index([month])
+  @@index([entryDate])
+}
+
+model JournalEntryLine {
+  id              String   @id @default(cuid())
+  entryId         String
+  accountId       String
+  debitAmount     Decimal  @db.Decimal(14, 2) @default(0)
+  creditAmount    Decimal  @db.Decimal(14, 2) @default(0)
+  description     String?
+
+  entry           JournalEntry    @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account         ChartOfAccounts @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId])
+}
+
+model MonthlyProfitLoss {
+  id              String   @id @default(cuid())
+  warehouseId     String
+  month           String
+  totalRevenue    Decimal  @db.Decimal(14, 2) @default(0)
+  totalCost       Decimal  @db.Decimal(14, 2) @default(0)
+  totalFixedAsset Decimal  @db.Decimal(14, 2) @default(0)
+  totalExpense    Decimal  @db.Decimal(14, 2) @default(0)
+  operatingProfit Decimal  @db.Decimal(14, 2) @default(0)
+  netProfit       Decimal  @db.Decimal(14, 2) @default(0)
+  revenueDetails  Json?
+  expenseDetails  Json?
+  calculatedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([warehouseId, month])
+  @@index([month])
+}
+
+model MonthlyBalanceSheet {
+  id              String   @id @default(cuid())
+  warehouseId     String
+  month           String
+  cashAndBank     Decimal  @db.Decimal(14, 2) @default(0)
+  otherReceivables Decimal @db.Decimal(14, 2) @default(0)
+  inventory       Decimal  @db.Decimal(14, 2) @default(0)
+  currentAssets   Decimal  @db.Decimal(14, 2) @default(0)
+  fixedAssetsCost Decimal  @db.Decimal(14, 2) @default(0)
+  accumulatedDep  Decimal  @db.Decimal(14, 2) @default(0)
+  fixedAssetsNet  Decimal  @db.Decimal(14, 2) @default(0)
+  totalAssets     Decimal  @db.Decimal(14, 2) @default(0)
+  advanceReceived Decimal  @db.Decimal(14, 2) @default(0)
+  totalLiabilities Decimal @db.Decimal(14, 2) @default(0)
+  paidInCapital   Decimal  @db.Decimal(14, 2) @default(0)
+  retainedEarnings Decimal @db.Decimal(14, 2) @default(0)
+  totalEquity     Decimal  @db.Decimal(14, 2) @default(0)
+  totalLiabAndEquity Decimal @db.Decimal(14, 2) @default(0)
+  isBalanced      Boolean  @default(false)
+  calculatedAt    DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([warehouseId, month])
+  @@index([month])
+}
+
+model ReconciliationCheck {
+  id              String   @id @default(cuid())
+  warehouseId     String
+  month           String
+  checkType       String
+  checkName       String
+  expectedValue   Decimal  @db.Decimal(14, 2)
+  actualValue     Decimal  @db.Decimal(14, 2)
+  difference      Decimal  @db.Decimal(14, 2)
+  isPassed        Boolean  @default(false)
+  details         String?
+  checkedAt       DateTime @default(now())
+
+  @@index([warehouseId, month])
 }

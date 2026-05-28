@@ -3,7 +3,7 @@ import { createParamDecorator, ExecutionContext } from '@nestjs/common';
 export type AuthUser = {
   sub: string;
   account: string;
-  role: 'warehouse' | 'admin';
+  role: 'warehouse' | 'admin' | 'finance';
   warehouseId: string | null;
 };
 
