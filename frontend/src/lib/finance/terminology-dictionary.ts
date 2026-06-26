@@ -1,4 +1,4 @@
-import type { FinanceTargetModule } from './types';
+import type { FinanceTargetModule } from './module-routing';
 
 export type FinanceTerminologyMode = 'professional' | 'simple';
 
@@ -8,14 +8,19 @@ export type FinanceTermKey =
   | 'finance.mode.professional'
   | 'finance.mode.simple'
   | 'finance.switchLabel'
-  | 'finance.tab.dataInput'
+  | 'finance.tab.dashboard'
   | 'finance.tab.balanceSheet'
   | 'finance.tab.profitStatement'
-  | 'finance.tab.operationMonitor'
+  | 'finance.tab.analysis'
+  | 'finance.tab.fundSummary'
+  | 'finance.tab.bankLedger'
+  | 'finance.tab.serviceRevenue'
+  | 'finance.tab.recharge'
   | 'finance.tab.fixedAssets'
-  | 'finance.tab.businessIncome'
   | 'finance.tab.consumables'
-  | 'finance.tab.topupDetails'
+  | 'finance.tab.chartOfAccounts'
+  | 'finance.tab.arAp'
+  | 'finance.tab.reconciliation'
   | 'finance.common.manualRefresh'
   | 'finance.common.lastRefreshed'
   | 'finance.module.balance_sheet'
@@ -76,9 +81,9 @@ const FINANCE_TERMS: Record<FinanceTermKey, Record<FinanceTerminologyMode, strin
     professional: '术语版本',
     simple: '术语显示',
   },
-  'finance.tab.dataInput': {
-    professional: '财务数据输入',
-    simple: '记账录入',
+  'finance.tab.dashboard': {
+    professional: '财务仪表盘',
+    simple: '财务总览',
   },
   'finance.tab.balanceSheet': {
     professional: '资产负债表',
@@ -88,25 +93,45 @@ const FINANCE_TERMS: Record<FinanceTermKey, Record<FinanceTerminologyMode, strin
     professional: '利润表',
     simple: '收支利润',
   },
-  'finance.tab.operationMonitor': {
-    professional: '经营监控表',
-    simple: '运营看板',
+  'finance.tab.analysis': {
+    professional: '经营利润分析',
+    simple: '利润对比',
+  },
+  'finance.tab.fundSummary': {
+    professional: '资金账户汇总',
+    simple: '资金账户',
+  },
+  'finance.tab.bankLedger': {
+    professional: '银行日记账',
+    simple: '银行流水',
+  },
+  'finance.tab.serviceRevenue': {
+    professional: '主营业务收入',
+    simple: '服务收入',
+  },
+  'finance.tab.recharge': {
+    professional: '充值明细',
+    simple: '充值流水',
   },
   'finance.tab.fixedAssets': {
     professional: '固定资产表',
     simple: '资产设备',
   },
-  'finance.tab.businessIncome': {
-    professional: '业务类别收入表',
-    simple: '收入分类',
-  },
   'finance.tab.consumables': {
     professional: '耗材清单',
     simple: '日常耗材',
   },
-  'finance.tab.topupDetails': {
-    professional: '充值明细',
-    simple: '充值流水',
+  'finance.tab.chartOfAccounts': {
+    professional: '科目分录',
+    simple: '会计科目',
+  },
+  'finance.tab.arAp': {
+    professional: '应收应付',
+    simple: '往来款项',
+  },
+  'finance.tab.reconciliation': {
+    professional: '勾稽审查',
+    simple: '账务核对',
   },
   'finance.common.manualRefresh': {
     professional: '手动刷新',

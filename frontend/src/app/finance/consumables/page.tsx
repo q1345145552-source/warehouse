@@ -1,76 +1,72 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { fetchFinanceRecords } from '@/lib/finance/finance-api';
-import { matchRecordToTargetModule } from '@/lib/finance/module-routing';
-import { subscribeFinanceDataUpdated } from '@/lib/finance/sync';
-import { useFinanceTerminology } from '@/lib/finance/terminology';
-import type { FinanceRecord } from '@/lib/finance/types';
+import { useEffect, useState } from 'react';
+import { fetchConsumableItems, fetchConsumableMonthlyCost } from '@/lib/finance/finance-api';
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
 
 export default function ConsumablesPage() {
-  const { term, moduleLabel } = useFinanceTerminology();
-  const [expenses, setExpenses] = useState<FinanceRecord[]>([]);
-  const [refreshedAt, setRefreshedAt] = useState('');
-  const [message, setMessage] = useState('');
+  const [month] = useState(currentMonth());
+  const [items, setItems] = useState<any[]>([]);
+  const [monthlyCost, setMonthlyCost] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
-    void load();
-    const unsubscribe = subscribeFinanceDataUpdated(() => {
-      void load();
-    });
-    return unsubscribe;
-  }, []);
+  const fmt = (n: number) => n?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '0.00';
 
-  async function load() {
+  const load = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await fetchFinanceRecords('expense');
-      setExpenses(res.data.filter((item) => matchRecordToTargetModule(item, 'consumables')));
-      setRefreshedAt(new Date().toLocaleString());
-      setMessage('');
-    } catch {
-      setExpenses([]);
-      setMessage('耗材清单加载失败，请稍后重试。');
+      const [iRes, cRes] = await Promise.all([
+        fetchConsumableItems(),
+        fetchConsumableMonthlyCost(month),
+      ]);
+      setItems(iRes.data);
+      setMonthlyCost(cRes.data?.totalCost ?? 0);
+    } catch (e: any) {
+      setError(e.message || '加载失败');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  const consumables = useMemo(() => expenses, [expenses]);
-  const total = useMemo(
-    () => consumables.reduce((sum, item) => sum + Number(item.amountCny ?? item.amount ?? 0), 0),
-    [consumables],
-  );
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <div className="section"><p>加载中...</p></div>;
+  if (error) return <div className="section"><p style={{ color: 'red' }}>{error}</p></div>;
 
   return (
-    <section className="section">
-      <h3>{moduleLabel('consumables')}</h3>
-      <p>数据来源：{term('finance.tab.dataInput')}（目标模块={moduleLabel('consumables')}，历史数据走兜底规则）。</p>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <button onClick={() => void load()}>{term('finance.common.manualRefresh')}</button>
-        <span>
-          {term('finance.common.lastRefreshed')}：{refreshedAt || '-'}
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>耗材清单</h2>
+        <button onClick={load}>刷新</button>
       </div>
-      <p>耗材支出总计：¥ {total.toFixed(2)}</p>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>类别</th>
-            <th>金额（CNY）</th>
-            <th>状态</th>
-          </tr>
-        </thead>
-        <tbody>
-          {consumables.map((item) => (
-            <tr key={item.id}>
-              <td>{item.recordDate.slice(0, 10)}</td>
-              <td>{item.category}</td>
-              <td>¥ {Number(item.amountCny ?? item.amount).toFixed(2)}</td>
-              <td>{item.status}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {message ? <p>{message}</p> : null}
-    </section>
+
+      <div className="cards">
+        <div className="card"><h3>品项数</h3><p className="big-num">{items.length}</p></div>
+        <div className="card"><h3>{month} 耗材成本</h3><p className="big-num">฿{fmt(monthlyCost)}</p></div>
+      </div>
+
+      <div className="section">
+        <table className="table">
+          <thead><tr><th>名称</th><th>规格</th><th>单位</th><th>默认单价</th><th>状态</th></tr></thead>
+          <tbody>
+            {items.map((item: any) => (
+              <tr key={item.id}>
+                <td>{item.itemName}</td>
+                <td>{item.itemCode ?? '-'}</td>
+                <td>{item.unit}</td>
+                <td style={{ textAlign: 'right' }}>{fmt(item.defaultPrice ?? 0)}</td>
+                <td>{item.status === 'active' ? '在用' : item.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

@@ -1,35 +1,37 @@
 export type FinanceTabKey =
-  | 'data-input'
+  | 'dashboard'
   | 'balance-sheet'
   | 'profit-statement'
-  | 'operation-monitor'
+  | 'analysis'
+  | 'fund-summary'
+  | 'bank-ledger'
+  | 'service-revenue'
+  | 'recharge'
   | 'fixed-assets'
-  | 'business-income'
   | 'consumables'
-  | 'topup-details';
+  | 'chart-of-accounts'
+  | 'ar-ap'
+  | 'reconciliation';
 
 export type FinanceTab = {
   key: FinanceTabKey;
-  termKey:
-    | 'finance.tab.dataInput'
-    | 'finance.tab.balanceSheet'
-    | 'finance.tab.profitStatement'
-    | 'finance.tab.operationMonitor'
-    | 'finance.tab.fixedAssets'
-    | 'finance.tab.businessIncome'
-    | 'finance.tab.consumables'
-    | 'finance.tab.topupDetails';
+  termKey: string;
   href: string;
   enabled: boolean;
 };
 
 export const FINANCE_TABS: FinanceTab[] = [
-  { key: 'data-input', termKey: 'finance.tab.dataInput', href: '/finance/data-input', enabled: true },
+  { key: 'dashboard', termKey: 'finance.tab.dashboard', href: '/finance/dashboard', enabled: true },
   { key: 'balance-sheet', termKey: 'finance.tab.balanceSheet', href: '/finance/balance-sheet', enabled: true },
   { key: 'profit-statement', termKey: 'finance.tab.profitStatement', href: '/finance/profit-statement', enabled: true },
-  { key: 'operation-monitor', termKey: 'finance.tab.operationMonitor', href: '/finance/operation-monitor', enabled: true },
+  { key: 'analysis', termKey: 'finance.tab.analysis', href: '/finance/analysis', enabled: true },
+  { key: 'fund-summary', termKey: 'finance.tab.fundSummary', href: '/finance/fund-summary', enabled: true },
+  { key: 'bank-ledger', termKey: 'finance.tab.bankLedger', href: '/finance/bank-ledger', enabled: true },
+  { key: 'service-revenue', termKey: 'finance.tab.serviceRevenue', href: '/finance/service-revenue', enabled: true },
+  { key: 'recharge', termKey: 'finance.tab.recharge', href: '/finance/recharge', enabled: true },
   { key: 'fixed-assets', termKey: 'finance.tab.fixedAssets', href: '/finance/fixed-assets', enabled: true },
-  { key: 'business-income', termKey: 'finance.tab.businessIncome', href: '/finance/business-income', enabled: true },
   { key: 'consumables', termKey: 'finance.tab.consumables', href: '/finance/consumables', enabled: true },
-  { key: 'topup-details', termKey: 'finance.tab.topupDetails', href: '/finance/topup-details', enabled: true },
+  { key: 'chart-of-accounts', termKey: 'finance.tab.chartOfAccounts', href: '/finance/chart-of-accounts', enabled: true },
+  { key: 'ar-ap', termKey: 'finance.tab.arAp', href: '/finance/ar-ap', enabled: true },
+  { key: 'reconciliation', termKey: 'finance.tab.reconciliation', href: '/finance/reconciliation', enabled: true },
 ];

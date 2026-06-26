@@ -1,75 +1,124 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { fetchFinanceRecords } from '@/lib/finance/finance-api';
-import { matchRecordToTargetModule } from '@/lib/finance/module-routing';
-import { subscribeFinanceDataUpdated } from '@/lib/finance/sync';
-import { useFinanceTerminology } from '@/lib/finance/terminology';
-import type { FinanceRecord } from '@/lib/finance/types';
+import { useEffect, useState } from 'react';
+import { fetchFixedAssets, fetchFixedAssetMonthlyExpense, saveFixedAsset } from '@/lib/finance/finance-api';
+import { getWarehouseId } from '@/lib/auth';
+
+function currentMonth(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
 
 export default function FixedAssetsPage() {
-  const { term, moduleLabel } = useFinanceTerminology();
-  const [purchases, setPurchases] = useState<FinanceRecord[]>([]);
-  const [refreshedAt, setRefreshedAt] = useState('');
-  const [message, setMessage] = useState('');
+  const [month] = useState(currentMonth());
+  const [assets, setAssets] = useState<any[]>([]);
+  const [monthlyExp, setMonthlyExp] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const wid = getWarehouseId() ?? '';
 
-  useEffect(() => {
-    void load();
-    const unsubscribe = subscribeFinanceDataUpdated(() => {
-      void load();
-    });
-    return unsubscribe;
-  }, []);
+  const fmt = (n: number) => n?.toLocaleString(undefined, { minimumFractionDigits: 2 }) ?? '0.00';
 
-  async function load() {
+  const load = async () => {
+    setLoading(true);
+    setError('');
     try {
-      const res = await fetchFinanceRecords('purchase');
-      setPurchases(res.data.filter((item) => matchRecordToTargetModule(item, 'fixed_assets')));
-      setRefreshedAt(new Date().toLocaleString());
-      setMessage('');
-    } catch {
-      setPurchases([]);
-      setMessage('固定资产数据加载失败，建议检查后端服务状态。');
+      const [aRes, eRes] = await Promise.all([
+        fetchFixedAssets(),
+        fetchFixedAssetMonthlyExpense(month),
+      ]);
+      setAssets(aRes.data);
+      setMonthlyExp(eRes.data?.totalExpense ?? 0);
+    } catch (e: any) {
+      setError(e.message || '加载失败');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
-  const total = useMemo(
-    () => purchases.reduce((sum, item) => sum + Number(item.amountCny ?? item.amount ?? 0), 0),
-    [purchases],
-  );
+  useEffect(() => { load(); }, []);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    try {
+      await saveFixedAsset({
+        warehouseId: wid,
+        assetName: fd.get('assetName') as string,
+        nature: (fd.get('nature') as string) || '采购',
+        purchaseDate: fd.get('purchaseDate') as string,
+        purchaseQty: Number(fd.get('purchaseQty') || 1),
+        unitPrice: Number(fd.get('unitPrice') || 0),
+        depreciationMethod: fd.get('depreciationMethod') as string || 'immediate',
+        usefulLife: Number(fd.get('usefulLife') || 0) || undefined,
+      });
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      alert(e.message);
+    }
+  };
+
+  if (loading) return <div className="section"><p>加载中...</p></div>;
+  if (error) return <div className="section"><p style={{ color: 'red' }}>{error}</p></div>;
+
+  const total = assets.reduce((s, a) => s + Number(a.purchaseAmount ?? 0), 0);
 
   return (
-    <section className="section">
-      <h3>{moduleLabel('fixed_assets')}</h3>
-      <p>数据来源：{term('finance.tab.dataInput')}（目标模块={moduleLabel('fixed_assets')}，历史数据走兜底规则）。</p>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
-        <button onClick={() => void load()}>{term('finance.common.manualRefresh')}</button>
-        <span>
-          {term('finance.common.lastRefreshed')}：{refreshedAt || '-'}
-        </span>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+      <div className="section" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2>固定资产</h2>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button onClick={load}>刷新</button>
+          <button onClick={() => setShowForm(!showForm)}>{showForm ? '取消' : '+ 新增资产'}</button>
+        </div>
       </div>
-      <p>固定资产合计：¥ {total.toFixed(2)}</p>
-      <table className="table">
-        <thead>
-          <tr>
-            <th>日期</th>
-            <th>资产类别</th>
-            <th>入账金额（CNY）</th>
-            <th>状态</th>
-          </tr>
-        </thead>
-        <tbody>
-          {purchases.map((item) => (
-            <tr key={item.id}>
-              <td>{item.recordDate.slice(0, 10)}</td>
-              <td>{item.category}</td>
-              <td>¥ {Number(item.amountCny ?? item.amount).toFixed(2)}</td>
-              <td>{item.status}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {message ? <p>{message}</p> : null}
-    </section>
+
+      <div className="cards">
+        <div className="card"><h3>资产总数</h3><p className="big-num">{assets.length}</p></div>
+        <div className="card"><h3>采购总额</h3><p className="big-num">฿{fmt(total)}</p></div>
+        <div className="card"><h3>{month} 折旧费用</h3><p className="big-num">฿{fmt(monthlyExp)}</p><small>一次性摊销即全额计入采购月</small></div>
+      </div>
+
+      {showForm && (
+        <div className="section">
+          <h3>新增固定资产</h3>
+          <form onSubmit={handleSubmit} className="form-grid">
+            <label>资产名称* <input name="assetName" required /></label>
+            <label>购入日期* <input name="purchaseDate" type="date" required /></label>
+            <label>数量 <input name="purchaseQty" type="number" defaultValue="1" /></label>
+            <label>单价(THB) <input name="unitPrice" type="number" step="0.01" /></label>
+            <label>折旧方式 <select name="depreciationMethod" defaultValue="immediate">
+              <option value="immediate">一次性摊销</option>
+              <option value="monthly">按月折旧</option>
+            </select></label>
+            <label>使用年限(月) <input name="usefulLife" type="number" /></label>
+            <label>性质 <input name="nature" defaultValue="采购" /></label>
+            <div><button type="submit">保存</button></div>
+          </form>
+        </div>
+      )}
+
+      <div className="section">
+        <table className="table">
+          <thead><tr><th>名称</th><th>购入日期</th><th>数量</th><th>单价</th><th>总价</th><th>折旧方式</th><th>累计折旧</th><th>状态</th></tr></thead>
+          <tbody>
+            {assets.map((a: any) => (
+              <tr key={a.id}>
+                <td>{a.assetName}</td>
+                <td>{a.purchaseDate?.slice(0, 10) ?? '-'}</td>
+                <td>{a.purchaseQty}</td>
+                <td style={{ textAlign: 'right' }}>{fmt(a.unitPrice)}</td>
+                <td style={{ textAlign: 'right' }}>{fmt(a.purchaseAmount)}</td>
+                <td>{a.depreciationMethod === 'immediate' ? '一次性摊销' : '按月折旧'}</td>
+                <td style={{ textAlign: 'right' }}>{fmt(a.accumulatedDepreciation)}</td>
+                <td>{a.status === 'active' ? '在用' : a.status}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

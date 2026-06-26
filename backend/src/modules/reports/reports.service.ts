@@ -75,7 +75,8 @@ export class ReportsService {
       if (!expenseByCategory[catId]) {
         expenseByCategory[catId] = { name: t.category.name, amount: 0 };
       }
-      const amount = Number(t.expenseThb) + Number(t.expenseCny) * 4.5;
+      const rate = await this.getExchangeRate('CNY', 'THB', t.transactionDate.toISOString());
+      const amount = Number(t.expenseThb) + Number(t.expenseCny) * rate;
       expenseByCategory[catId].amount += amount;
       totalExpense += amount;
     }
@@ -211,23 +212,24 @@ export class ReportsService {
     const totalLiabilities = advanceReceived;
 
     // 6. 所有者权益
-    // 实收资本 = 银行账户中"实收资本-投资款"的累计收入
-    const capitalAccountId = await this.prisma.chartOfAccounts.findFirst({
-      where: { code: '4001001' },
+    // 实收资本 = 科目类别为 'equity' 的银行账户累计收入
+    const capitalAccounts = await this.prisma.chartOfAccounts.findMany({
+      where: { category: 'equity', isLeaf: true },
     });
+    const capitalAccountIds = capitalAccounts.map((a) => a.id);
 
     let paidInCapital = 0;
-    if (capitalAccountId) {
+    if (capitalAccountIds.length > 0) {
       const capitalTransactions = await this.prisma.bankAccountTransaction.findMany({
         where: {
           bankAccount: { warehouseId },
-          categoryId: capitalAccountId.id,
+          categoryId: { in: capitalAccountIds },
         },
       });
-      paidInCapital = capitalTransactions.reduce(
-        (sum, t) => sum + Number(t.incomeThb) + Number(t.incomeCny) * 4.5,
-        0,
-      );
+      for (const t of capitalTransactions) {
+        const rate = await this.getExchangeRate('CNY', 'THB', t.transactionDate.toISOString());
+        paidInCapital += Number(t.incomeThb) + Number(t.incomeCny) * rate;
+      }
     }
 
     // 累计净利润
@@ -325,10 +327,11 @@ export class ReportsService {
         customer: { warehouseId },
       },
     });
-    const totalBilling = billingTransactions.reduce(
-      (sum, t) => sum + Number(t.amountThb) + Number(t.amountCny) * 4.5,
-      0,
-    );
+    let totalBilling = 0;
+    for (const t of billingTransactions) {
+      const rate = await this.getExchangeRate('CNY', 'THB', t.transactionDate.toISOString());
+      totalBilling += Number(t.amountThb) + Number(t.amountCny) * rate;
+    }
 
     checks.push({
       checkType: 'revenue_billing_match',
@@ -437,9 +440,301 @@ export class ReportsService {
     };
   }
 
+  private async getExchangeRate(
+    baseCurrency: string,
+    quoteCurrency: string,
+    date: string,
+  ): Promise<number> {
+    const effectiveDate = new Date(date);
+    const rate = await this.prisma.exchangeRate.findFirst({
+      where: {
+        baseCurrency,
+        quoteCurrency,
+        effectiveDate: { lte: effectiveDate },
+      },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    return rate ? Number(rate.rateValue) : 4.5;
+  }
+
+  // 触发自动扣费
+  async triggerAutoBilling(warehouseId: string, month: string) {
+    const customers = await this.prisma.customer.findMany({
+      where: { warehouseId, status: 'active' },
+    });
+
+    const results: Array<{
+      customerId: string;
+      customerName: string;
+      billed: number;
+      success: boolean;
+      message: string;
+    }> = [];
+
+    for (const customer of customers) {
+      // 获取该客户当月服务收入
+      const revenues = await this.prisma.serviceRevenue.findMany({
+        where: {
+          customerId: customer.id,
+          serviceMonth: month,
+          status: 'confirmed',
+        },
+      });
+
+      if (revenues.length === 0) {
+        results.push({
+          customerId: customer.id,
+          customerName: customer.customerName,
+          billed: 0,
+          success: false,
+          message: '当月无服务收入',
+        });
+        continue;
+      }
+
+      const totalThb = revenues.reduce((sum, r) => sum + Number(r.amountThb), 0);
+
+      // 获取当前余额
+      const latest = await this.prisma.rechargeTransaction.findFirst({
+        where: { customerId: customer.id },
+        orderBy: { transactionDate: 'desc' },
+      });
+
+      const currentThb = Number(latest?.balanceAfterThb ?? 0);
+      const currentCny = Number(latest?.balanceAfterCny ?? 0);
+      const rate = Number(customer.exchangeRate ?? 4.5);
+
+      const newBalanceThb = Number((currentThb - totalThb).toFixed(2));
+      const newBalanceCny = Number(
+        (currentCny - Number((totalThb / rate).toFixed(2))).toFixed(2),
+      );
+
+      const services = revenues.map((r) => r.serviceType).join('、');
+      await this.prisma.rechargeTransaction.create({
+        data: {
+          customerId: customer.id,
+          transactionDate: new Date(`${month}-28`),
+          type: 'billing',
+          currency: 'THB',
+          amountThb: totalThb,
+          amountCny: Number((totalThb / rate).toFixed(2)),
+          exchangeRate: rate,
+          balanceAfterThb: newBalanceThb,
+          balanceAfterCny: newBalanceCny,
+          remark: `${month} 服务扣费：${services}`,
+        },
+      });
+
+      results.push({
+        customerId: customer.id,
+        customerName: customer.customerName,
+        billed: totalThb,
+        success: true,
+        message: `已扣费 ${totalThb} THB`,
+      });
+    }
+
+    return {
+      success: true,
+      data: { month, results },
+    };
+  }
+
   private monthDiff(startMonth: string, endMonth: string): number {
     const [sy, sm] = startMonth.split('-').map(Number);
     const [ey, em] = endMonth.split('-').map(Number);
     return (ey - sy) * 12 + (em - sm);
+  }
+
+  // 经营利润分析（环比分析）
+  async getBusinessProfitAnalysis(warehouseId: string, month?: string) {
+    if (!month) {
+      const now = new Date();
+      month = `${now.getFullYear()}-${String(now.getMonth()).padStart(2, '0')}`;
+    }
+
+    // 当前月
+    const currentPL = await this.generateProfitLoss(warehouseId, month);
+
+    // 上月
+    const [y, m] = month.split('-').map(Number);
+    const prevDate = new Date(y, m - 2, 1);
+    const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+    let prevPL;
+    try {
+      prevPL = await this.prisma.monthlyProfitLoss.findFirst({
+        where: { warehouseId, month: prevMonth },
+      });
+    } catch {
+      prevPL = null;
+    }
+
+    const analysis: Array<{
+      item: string;
+      currentAmount: number;
+      prevAmount: number;
+      changeAmount: number;
+      changeRate: string;
+    }> = [];
+
+    const items = [
+      { key: 'totalRevenue', name: '主营业务收入' },
+      { key: 'totalCost', name: '主营业务成本-耗材成本' },
+      { key: 'totalFixedAsset', name: '固定资产' },
+      { key: 'totalExpense', name: '期间费用合计' },
+      { key: 'operatingProfit', name: '营业利润' },
+      { key: 'netProfit', name: '净利润' },
+    ];
+
+    for (const item of items) {
+      const currentAmount = (currentPL.data as any)[item.key] ?? 0;
+      const prevAmount = prevPL ? Number((prevPL as any)[item.key] ?? 0) : 0;
+      const changeAmount = currentAmount - prevAmount;
+
+      let changeRate = '无可比';
+      if (prevAmount !== 0) {
+        changeRate = ((changeAmount / prevAmount) * 100).toFixed(2) + '%';
+      } else if (changeAmount > 0) {
+        changeRate = '新增';
+      }
+
+      analysis.push({
+        item: item.name,
+        currentAmount,
+        prevAmount,
+        changeAmount,
+        changeRate,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        currentMonth: month,
+        prevMonth,
+        analysis,
+      },
+    };
+  }
+
+  // 应收应付汇总
+  async getARAPSummary(warehouseId: string) {
+    // AR: 客户预存款余额
+    const customers = await this.prisma.customer.findMany({
+      where: { warehouseId, status: 'active' },
+    });
+
+    const receivables: Array<{
+      customerId: string;
+      customerName: string;
+      balanceThb: number;
+      balanceCny: number;
+      type: string;
+    }> = [];
+
+    for (const customer of customers) {
+      const latest = await this.prisma.rechargeTransaction.findFirst({
+        where: { customerId: customer.id },
+        orderBy: { transactionDate: 'desc' },
+      });
+      const balanceThb = Number(latest?.balanceAfterThb ?? 0);
+      const balanceCny = Number(latest?.balanceAfterCny ?? 0);
+      if (balanceThb > 0 || balanceCny > 0) {
+        receivables.push({
+          customerId: customer.id,
+          customerName: customer.customerName,
+          balanceThb,
+          balanceCny,
+          type: customer.customerType,
+        });
+      }
+    }
+
+    // AP: 暂按无应付处理（预充值模式下应付极少）
+    const payables: Array<{
+      name: string;
+      amountThb: number;
+      amountCny: number;
+      description: string;
+    }> = [];
+
+    const totalAR = receivables.reduce((s, r) => s + r.balanceThb + r.balanceCny * 4.5, 0);
+    const totalAP = payables.reduce((s, p) => s + p.amountThb + p.amountCny * 4.5, 0);
+
+    return {
+      success: true,
+      data: {
+        receivables,
+        payables,
+        totalAR,
+        totalAP,
+        netAR: totalAR - totalAP,
+      },
+    };
+  }
+
+  // 银行日记账
+  async getBankLedger(warehouseId: string, accountId: string, month?: string) {
+    const where: any = { bankAccountId: accountId };
+    if (month) where.month = month;
+
+    const account = await this.prisma.bankAccount.findUnique({
+      where: { id: accountId },
+    });
+    if (!account || account.warehouseId !== warehouseId) {
+      return { success: false, message: '账户不存在' };
+    }
+
+    const transactions = await this.prisma.bankAccountTransaction.findMany({
+      where,
+      include: {
+        category: { select: { code: true, name: true } },
+        bankAccount: { select: { accountName: true } },
+      },
+      orderBy: { transactionDate: 'asc' },
+    });
+
+    let totalIncomeThb = 0;
+    let totalIncomeCny = 0;
+    let totalExpenseThb = 0;
+    let totalExpenseCny = 0;
+
+    const items = transactions.map((t) => {
+      totalIncomeThb += Number(t.incomeThb);
+      totalIncomeCny += Number(t.incomeCny);
+      totalExpenseThb += Number(t.expenseThb);
+      totalExpenseCny += Number(t.expenseCny);
+
+      return {
+        id: t.id,
+        transactionDate: t.transactionDate,
+        month: t.month,
+        description: t.description,
+        categoryName: t.category?.name ?? '',
+        incomeThb: Number(t.incomeThb),
+        incomeCny: Number(t.incomeCny),
+        expenseThb: Number(t.expenseThb),
+        expenseCny: Number(t.expenseCny),
+        balanceAfterThb: Number(t.balanceAfterThb ?? 0),
+        balanceAfterCny: Number(t.balanceAfterCny ?? 0),
+        remark: t.remark,
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        accountName: account.accountName,
+        accountType: account.accountType,
+        summary: {
+          totalIncomeThb,
+          totalIncomeCny,
+          totalExpenseThb,
+          totalExpenseCny,
+        },
+        transactions: items,
+      },
+    };
   }
 }

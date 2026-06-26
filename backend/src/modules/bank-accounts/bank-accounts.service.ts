@@ -114,7 +114,8 @@ export class BankAccountsService {
         if (!byCategory[catKey]) {
           byCategory[catKey] = { name: item.category.name, amount: 0 };
         }
-        byCategory[catKey].amount += Number(item.expenseThb) + Number(item.expenseCny) * 4.5;
+        const rate = await this.getExchangeRate('CNY', 'THB', item.transactionDate.toISOString());
+        byCategory[catKey].amount += Number(item.expenseThb) + Number(item.expenseCny) * rate;
       }
     }
 
@@ -172,6 +173,23 @@ export class BankAccountsService {
 
     await this.log('bank_transaction', 'create', { id: created.id, accountId: dto.bankAccountId });
     return { success: true, message: '流水已记录', data: created };
+  }
+
+  private async getExchangeRate(
+    baseCurrency: string,
+    quoteCurrency: string,
+    date: string,
+  ): Promise<number> {
+    const effectiveDate = new Date(date);
+    const rate = await this.prisma.exchangeRate.findFirst({
+      where: {
+        baseCurrency,
+        quoteCurrency,
+        effectiveDate: { lte: effectiveDate },
+      },
+      orderBy: { effectiveDate: 'desc' },
+    });
+    return rate ? Number(rate.rateValue) : 4.5;
   }
 
   private async log(module: string, action: string, payload: Record<string, unknown>) {
