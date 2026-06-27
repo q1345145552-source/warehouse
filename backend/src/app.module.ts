@@ -23,6 +23,7 @@ import { InventoryConsumableModule } from './modules/inventory-consumable/invent
 import { FixedAssetsModule } from './modules/fixed-assets/fixed-assets.module';
 import { ChartOfAccountsModule } from './modules/chart-of-accounts/chart-of-accounts.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { FinanceModule } from './modules/finance/finance.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     AuthModule,
     AdminModule,
     DashboardModule,
+    FinanceModule,
     InventoryModule,
     KpiModule,
     ProductsModule,
