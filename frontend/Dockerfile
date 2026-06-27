@@ -3,6 +3,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# 接收构建时参数（NEXT_PUBLIC_* 必须在构建时注入）
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3001/api}
+
 # 复制 package 文件
 COPY package*.json ./
 
